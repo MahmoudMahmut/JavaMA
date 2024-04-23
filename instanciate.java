@@ -37,12 +37,6 @@ public class instanciate {
         System.out.println("API-Antwort: " + response.body()); // Zum Debuggen
         JSONObject typeShell = new JSONObject(response.body());
 
-        // // Bearbeiten des AAS zum Typ
-        // modifyAssetAdministrationShell(typeShell);
-
-        // // Hochladen der Objektspeicherung
-        // uploadObjectStore(typeShell);
-
         if (typeShell.has("id")) {
             modifyAssetAdministrationShell(typeShell);
             uploadObjectStore(typeShell); // AAS hochladen
@@ -151,7 +145,7 @@ public class instanciate {
         for (int i = 0; i < submodels.length(); i++) {
             JSONObject submodel = submodels.getJSONObject(i);
             try {
-                // String submodelId = submodel.optString("id") + "Instance001";
+                
                 String uploadUrl = api.getEndpoint() + ':' + api.getRepoPort() + "/submodels";
                 HttpRequest uploadRequest = HttpRequest.newBuilder()
                         .uri(new URI(uploadUrl))
@@ -160,9 +154,7 @@ public class instanciate {
                         .build();
                 HttpResponse<String> uploadResponse = client.send(uploadRequest,
                         HttpResponse.BodyHandlers.ofString());
-                // System.out.println("Upload response for submodel " + submodelId + ": " +
-                // uploadResponse.statusCode()
-                // + " - " + uploadResponse.body());
+             
                 System.out.println("Upload response for submodel " + submodel.getString("id") + ": "
                         + uploadResponse.statusCode() + " - " + uploadResponse.body());
             } catch (Exception e) {
