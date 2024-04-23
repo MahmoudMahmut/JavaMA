@@ -26,54 +26,83 @@ public class instanciate {
     // Methode zum Erstellen einer Instanz
 
     public void createInstance(String typeShellIdentifier) throws Exception {
-        // Abrufen des Type Shell
+
+        // Zuerst das Repository bereinigen
+        api.clearRepo(true, true); // Löscht sowohl Shells als auch Submodels
+
+        // Type Shell herunterlade
         String url = api.getEndpoint() + ':' + api.getRepoPort() + "/shells/" + api.getBase64Str(typeShellIdentifier);
-        HttpRequest request = HttpRequest.newBuilder().uri(new URI(url)).build();
+        HttpRequest request = HttpRequest.newBuilder().uri(new URI(url)).GET().build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        System.out.println("API-Antwort: " + response.body()); // Zum Debuggen
         JSONObject typeShell = new JSONObject(response.body());
 
-        // Bearbeiten des AAS zum Typ
-        modifyAssetAdministrationShell(typeShell);
+        // // Bearbeiten des AAS zum Typ
+        // modifyAssetAdministrationShell(typeShell);
 
         // // Hochladen der Objektspeicherung
-        // api.uploadObjectStore(helper.getObjectStore());
+        // uploadObjectStore(typeShell);
+
+        if (typeShell.has("id")) {
+            modifyAssetAdministrationShell(typeShell);
+            uploadObjectStore(typeShell); // AAS hochladen
+            uploadSubmodels(typeShell); // Submodelle hochladen
+
+        } else {
+            System.out.println("Fehler: Die AAS-ID ist im JSON-Objekt nicht vorhanden.");
+        }
+
     }
 
     // Methode zu Modifikation und Verarbeitung der AAS
     private void modifyAssetAdministrationShell(JSONObject aas) {
-        // Einstellen der Instanz
-        aas.put("asset_information", new JSONObject()
-                .put("asset_kind", "instance")
-                .put("id", "www.hackerthon.de/ids/aas/Fahrrad_Instance_001")
-                .put("global_asset_id", "www.hackerthon.de/ids/aas/Fahrrad_Instance_001"));
+
+        JSONObject assetInfo = aas.optJSONObject("assetInformation");
+        if (assetInfo == null) {
+            System.out.println("Fehler: 'asset_information' fehlt im JSON-Objekt.");
+            return;
+        }
+
+        // Setzen der Instanzinformationen
+
+        assetInfo.put("asset_kind", "instance");
+        assetInfo.put("global_asset_id", aas.getString("id") + "_Instance");
 
         aas.put("display_name", new JSONObject().put("de", "Fahrrad_001"));
         aas.put("id_short", "FahrradInstance_001");
 
-        // Verarbeitung der Submodelle
         processSubmodels(aas);
     }
 
     private void processSubmodels(JSONObject aas) {
-        JSONArray submodels = aas.getJSONArray("submodels");
+        JSONArray submodels = aas.optJSONArray("submodels");
+
+        if (submodels == null) {
+            System.out.println("Keine Submodelle gefunden.");
+            return;
+        }
+
         JSONArray newSubmodels = new JSONArray();
 
         for (int i = 0; i < submodels.length(); i++) {
-            JSONObject originalSubmodel = submodels.getJSONObject(i);
-            JSONObject clonedSubmodel = new JSONObject(originalSubmodel.toString()); // Einfache Kopie, tiefe Kopie je
-                                                                                     // nach Bedarf
-            String newId = originalSubmodel.getString("id") + "Instance001";
+            JSONObject submodel = submodels.getJSONObject(i);
+            JSONObject newSubmodel = new JSONObject(submodel.toString()); // Tiefe Kopie
 
-            clonedSubmodel.put("id", newId);
-            updateSubmodel(clonedSubmodel); // Methode implementieren, um weitere Anpassungen vorzunehmen
-            newSubmodels.put(clonedSubmodel);
+            // String newId = submodel.optString("id") + "Instance001";
+            String newId = "www.hackerthon.de/ids/aas/Fahrrad_" + submodel.optString("id") + "Instance_001"; // Korrekte
+                                                                                                             // ID
+                                                                                                             // generieren
+            newSubmodel.put("id", newId);
+            updateSubmodelAttributes(newSubmodel);
+            newSubmodels.put(newSubmodel);
         }
         aas.put("submodels", newSubmodels); // Ersetze alte Submodelle durch neue
     }
 
-    private void updateSubmodel(JSONObject submodel) {
-        // Anpassen des Submodells, zum Beispiel:
-        // submodel.put("einigeFelder", "neueWerte");
+    private void updateSubmodelAttributes(JSONObject submodel) {
+        submodel.put("status", "aktualisiert");
+        // Beispiel für weitere notwendige Anpassungen
+        // submodel.put("neuesAttribut", "neuerWert");
     }
 
     // da es in AssHelper keine Methode "getElementByIdPath" gibt!!!!
@@ -101,11 +130,49 @@ public class instanciate {
         aas.getJSONObject("Nameplate").getJSONObject("WarrantyUntil").put("value", "2026");
     }
 
-    public void uploadObjectStore(Map<String, JSONObject> objectStore) {
-        // Implementiere das Hochladen der Objektspeicherung zur API
-        // Dies kann HTTP-Requests beinhalten, die die JSON-Objekte senden
+    public void uploadObjectStore(JSONObject aas) {
+        try {
+            String uploadUrl = api.getEndpoint() + ':' + api.getRepoPort() + "/shells";
+            HttpRequest uploadRequest = HttpRequest.newBuilder()
+                    .uri(new URI(uploadUrl))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(aas.toString()))
+                    .build();
+            HttpResponse<String> uploadResponse = client.send(uploadRequest, HttpResponse.BodyHandlers.ofString());
+            System.out.println("Upload response for AAS: " + uploadResponse.statusCode() + " - " + uploadResponse.body());
+        } catch (Exception e) {
+            System.out.println("Fehler beim Hochladen des AAS: " + e.getMessage());
+        }
+    }
+
+    private void uploadSubmodels(JSONObject aas) {
+        JSONArray submodels = aas.getJSONArray("submodels");
+
+        for (int i = 0; i < submodels.length(); i++) {
+            JSONObject submodel = submodels.getJSONObject(i);
+            try {
+                // String submodelId = submodel.optString("id") + "Instance001";
+                String uploadUrl = api.getEndpoint() + ':' + api.getRepoPort() + "/submodels";
+                HttpRequest uploadRequest = HttpRequest.newBuilder()
+                        .uri(new URI(uploadUrl))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(submodel.toString()))
+                        .build();
+                HttpResponse<String> uploadResponse = client.send(uploadRequest,
+                        HttpResponse.BodyHandlers.ofString());
+                // System.out.println("Upload response for submodel " + submodelId + ": " +
+                // uploadResponse.statusCode()
+                // + " - " + uploadResponse.body());
+                System.out.println("Upload response for submodel " + submodel.getString("id") + ": "
+                        + uploadResponse.statusCode() + " - " + uploadResponse.body());
+            } catch (Exception e) {
+                System.out.println("Fehler beim Hochladen des Submodells: " + e.getMessage());
+            }
+        }
 
     }
+
+    
 
     public static void main(String[] args) {
         try {
